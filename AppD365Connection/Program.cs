@@ -23,10 +23,19 @@ namespace AppD365Connection
             CrmServiceClient svc = new CrmServiceClient(connectionStr);
             if (svc.IsReady)
             {
+
+                AppointmentInvite appointmentInvite = new AppointmentInvite();
+                AppointmentEntity appointment = new AppointmentEntity();
+                //4a620836-26e3-eb11-bacb-0022486e5b09
+                var appointmentEnt = svc.Retrieve("appointment", new Guid("4a620836-26e3-eb11-bacb-0022486e5b09"), new ColumnSet(true));
+                Guid emailId = appointmentInvite.CreateEmail(appointmentEnt, appointment, svc);
+                appointmentInvite.CreateICSAttachment(emailId, appointment, svc);
+                appointmentInvite.SendEmail(emailId, svc);
+
                 //appointment&id=f6682d3e-68e1-eb11-bacb-0022486eae28
                 //var appointmentEnt = new Entity("appointment");
                 //appointmentEnt.Id = new Guid("f6682d3e-68e1-eb11-bacb-0022486eae28");
-                //var appointmentEnt = svc.Retrieve("appointment", new Guid("f6682d3e-68e1-eb11-bacb-0022486eae28"), new ColumnSet(true));                
+                //                
 
                 //var email = new Entity("email")
                 //{
@@ -38,46 +47,46 @@ namespace AppD365Connection
                 //    MimeType = "multipart/mixed"
                 //};
 
-                Entity fromActivityParty = new Entity("activityparty");
-                Entity toActivityParty = new Entity("activityparty");
+                //Entity fromActivityParty = new Entity("activityparty");
+                //Entity toActivityParty = new Entity("activityparty");
 
-                //contact&id=
-                Guid contactId = new Guid("25a17064-1ae7-e611-80f4-e0071b661f01");
+                ////contact&id=
+                //Guid contactId = new Guid("25a17064-1ae7-e611-80f4-e0071b661f01");
 
-                fromActivityParty["partyid"] = new EntityReference("systemuser",new Guid("3f715aa5-e2e0-eb11-bacb-0022486ea6e3"));
-                toActivityParty["partyid"] = new EntityReference("contact", contactId);
-                Console.WriteLine("Create Email");
-                Entity email = new Entity("email");
-                email["from"] = new Entity[] { fromActivityParty };
-                email["to"] = new Entity[] { toActivityParty };
-                email["regardingobjectid"] = new EntityReference("contact", contactId);
-                email["subject"] = "This is the subject";
-                email["description"] = "This is the description.";
-                email["directioncode"] = true;
-                Guid emailId = svc.Create(email);
+                //fromActivityParty["partyid"] = new EntityReference("systemuser",new Guid("3f715aa5-e2e0-eb11-bacb-0022486ea6e3"));
+                //toActivityParty["partyid"] = new EntityReference("contact", contactId);
+                //Console.WriteLine("Create Email");
+                //Entity email = new Entity("email");
+                //email["from"] = new Entity[] { fromActivityParty };
+                //email["to"] = new Entity[] { toActivityParty };
+                //email["regardingobjectid"] = new EntityReference("contact", contactId);
+                //email["subject"] = "This is the subject";
+                //email["description"] = "This is the description.";
+                //email["directioncode"] = true;
+                //Guid emailId = svc.Create(email);
           
-                //Guid gEmail = svc.Create(email);
+                ////Guid gEmail = svc.Create(email);
 
-                var ical = new Entity("activitymimeattachment");
+                //var ical = new Entity("activitymimeattachment");
 
-                ical["mimetype"] = "text/calendar; charset=UTF-8; method=REQUEST";//;method=REQUEST
-                ical["body"] = GetICS();//Base64 encoded version of vCalendar above
-                ical["subject"] = "Appointment";
-                ical["filename"] = "Meeting1";
-                ical["objectid"] = new EntityReference("email", emailId);
-                ical["objecttypecode"] = email.LogicalName;
+                //ical["mimetype"] = "text/calendar; charset=UTF-8; method=REQUEST";//;method=REQUEST
+                //ical["body"] = GetICS();//Base64 encoded version of vCalendar above
+                //ical["subject"] = "Appointment";
+                //ical["filename"] = "Meeting1";
+                //ical["objectid"] = new EntityReference("email", emailId);
+                //ical["objecttypecode"] = email.LogicalName;
 
-                Console.WriteLine("Create Attachment");
-                svc.Create(ical);
+                //Console.WriteLine("Create Attachment");
+                //svc.Create(ical);
 
-                SendEmailRequest sendEmailreq = new SendEmailRequest
-                {
-                    EmailId = emailId,
-                    TrackingToken = "",
-                    IssueSend = true
-                };
+                //SendEmailRequest sendEmailreq = new SendEmailRequest
+                //{
+                //    EmailId = emailId,
+                //    TrackingToken = "",
+                //    IssueSend = true
+                //};
 
-                Console.WriteLine("Send Email");
+                //Console.WriteLine("Send Email");
                 //SendEmailResponse sendEmailresp = (SendEmailResponse)svc.Execute(sendEmailreq);
 
             }
@@ -112,34 +121,6 @@ namespace AppD365Connection
             str.AppendLine("END:VALARM");
             str.AppendLine("END:VEVENT");
             str.AppendLine("END:VCALENDAR");
-            //string plainText = "BEGIN:VCALENDAR" +
-            //        "PRODID:-//Our Software//CalMan//EN" +
-            //        "VERSION:2.0" +
-            //        "CALSCALE:GREGORIAN" +
-            //        "METHOD:REQUEST" +
-            //        "X-MS-OLK-FORCEINSPECTOROPEN:TRUE" +
-            //        "BEGIN:VEVENT" +
-            //        "DTSTART:20190406T133000Z" +
-            //        "DTEND:20190406T143000Z" +
-            //        "DTSTAMP:20190402T130711Z" +
-            //        "ORGANIZER;CN=The Organizer:mailto:me@us.com" +
-            //        "UID:bfnuadapfgs91eqihepacgq2lm@us.com" +
-            //        "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=TRUE;CN=The Organizer;X-NUM-GUESTS=0:mailto:me@us.com" +
-            //        "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=the recipient;X-NUM-GUESTS=0:mailto:you@them.com" +
-            //        "CREATED:20190402T130709Z" +
-            //        "DESCRIPTION:some description" +
-            //        "LAST-MODIFIED:20190402T130709Z" +
-            //        "LOCATION:somehwere" +
-            //        "X-ALT-DESC;FMTTYPE=text/html:<html><body><a href='http://bing.com'>Bing</a></body></html>" +
-            //        "SEQUENCE:0" +
-            //        "STATUS:CONFIRMED" +
-            //        "SUMMARY:test" +
-            //        "TRANSP:OPAQUE" +
-            //        "END:VEVENT" +
-            //        "END:VCALENDAR";
-
-
-
             var plainTextBytes = System.Text.Encoding.UTF8.GetBytes(str.ToString());
             return System.Convert.ToBase64String(plainTextBytes);            
         }
