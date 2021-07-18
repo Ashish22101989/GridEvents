@@ -107,8 +107,6 @@ namespace AppD365Connection
             }
         }
 
-
-
         public AppointmentEntity SetAppointment(Entity entity)
         {
 
@@ -178,8 +176,6 @@ namespace AppD365Connection
         {
             try
             {
-
-
                 Entity email = new Entity("email");
                 if (entity.Attributes.Contains("subject") && entity.Attributes["subject"] != null)
                 {
@@ -216,9 +212,11 @@ namespace AppD365Connection
                     email["from"] = new Entity[] { fromActivityParty };
                     appointment.Owner = owner;
                 }
+
+                EntityCollection requiredAttendees = null;
                 if (entity.Attributes.Contains("requiredattendees") && entity.Attributes["requiredattendees"] != null)
                 {
-                    EntityCollection requiredAttendees = (EntityCollection)entity.Attributes["requiredattendees"];
+                    requiredAttendees = (EntityCollection)entity.Attributes["requiredattendees"];
                     List<Entity> requiredAttendeesList = new List<Entity>();
 
                     if (requiredAttendees != null && requiredAttendees.Entities.Count > 0)
@@ -241,9 +239,13 @@ namespace AppD365Connection
                 {
                     EntityCollection optionalAttendees = (EntityCollection)entity.Attributes["optionalattendees"];
                     List<Entity> optionalAttendeesList = new List<Entity>();
+
                     if (optionalAttendees != null && optionalAttendees.Entities.Count > 0)
                     {
-                        foreach (var attendee in optionalAttendees.Entities)
+                        var optionalAttendeeCollection = (from entity1 in optionalAttendees.Entities
+                                                          where !requiredAttendees.Entities.Any(x => ((EntityReference)x.Attributes["partyid"]).Id == (((EntityReference)entity1.Attributes["partyid"]).Id))
+                                                          select entity1).ToList();
+                        foreach (var attendee in optionalAttendeeCollection)
                         {
                             if (attendee != null && attendee.Contains("partyid") && attendee.Attributes["partyid"] != null)
                             {
@@ -251,13 +253,8 @@ namespace AppD365Connection
                                 toActivityParty["partyid"] = attendee.Attributes["partyid"];
                                 optionalAttendeesList.Add(toActivityParty);
                             }
-                        }
-
-                        
-                            email["cc"] = optionalAttendees;
-                        
-
-                       
+                        }                        
+                            email["cc"] = optionalAttendeesList.ToArray();                       
                     }
                     appointment.OptionalAttendees = optionalAttendees;
                 }
@@ -267,18 +264,112 @@ namespace AppD365Connection
                 return organizationService.Create(email);
 
             }
-            catch (Exception ex)
-            
+            catch (Exception ex)         
             {
                 throw new InvalidPluginExecutionException(ex.ToString());
             }
         }
 
+
+
+        private void GetAttendees(AppointmentEntity appointment, IOrganizationService organizationService)
+        {
+
+        }
+
         public void CreateICSAttachment(Guid emailId, AppointmentEntity appointment, IOrganizationService organizationService)
         {
+            //addressused
+
+            //if (addressused contains data)
+            //{
+            //    then using partyid attribute get the Name of the account, contact or user
+            //}
+
+            StringBuilder requiredAttendeesStr = new StringBuilder();
+            StringBuilder optionalAttendeesStr = new StringBuilder();
+            if (appointment.RequiredAttendees!= null && appointment.RequiredAttendees.Entities.Count>0)
+            {
+                EntityCollection requiredAttendeesCollection = appointment.RequiredAttendees;
+                RequiredAttendees requiredAttendees = new RequiredAttendees();
+                OptionalAttendees optionalAttendees = new OptionalAttendees();                                
+                requiredAttendees.AddToList(requiredAttendeesCollection);   
+                
+                if (appointment.OptionalAttendees!= null && appointment.OptionalAttendees.Entities.Count>0)
+                {
+                    var optionalAttendeeCollection = (from entity1 in appointment.OptionalAttendees.Entities
+                                                      where !appointment.RequiredAttendees.Entities.Any(x => ((EntityReference)x.Attributes["partyid"]).Id == (((EntityReference)entity1.Attributes["partyid"]).Id))
+                                                      select entity1).ToList();
+
+                    EntityCollection optionalAttendeesCollection = new EntityCollection();
+                    foreach (var entity in optionalAttendeeCollection)
+                    {
+                        optionalAttendeesCollection.Entities.Add(entity);
+                    }
+                    optionalAttendees.AddToList(optionalAttendeesCollection);
+                }
+                
+                FetchXmlParameters fetchXmlParameters = new FetchXmlParameters();
+                fetchXmlParameters.EntityName = "contact";
+                fetchXmlParameters.Attributes = new string[] { "fullname", "contactid", "emailaddress1" };                
+                fetchXmlParameters.OrderByAttribute = "fullname";
+                fetchXmlParameters.DescendingSortingOrder = false;
+                fetchXmlParameters.FilterType = "and";
+                fetchXmlParameters.ConditionAttribute = "contactid";
+                fetchXmlParameters.ConditionOperator = "in";
+                foreach (var contact in requiredAttendees.Contacts)
+                {
+                    fetchXmlParameters.Conditions.Add(contact.Id.ToString(), contact.Name);
+                }
+
+                if (optionalAttendees.Contacts!= null && optionalAttendees.Contacts.Count>0)
+                {
+                    foreach (var contact in optionalAttendees.Contacts)
+                    {
+                        fetchXmlParameters.Conditions.Add(contact.Id.ToString(), contact.Name);
+                    }
+                }
+
+                string contactFetch = CommonUtility.GetFetchXml(fetchXmlParameters);
+                EntityCollection entityCollection = CommonUtility.RetrieveMultiple(contactFetch,organizationService);
+                
+
+                if (entityCollection != null && entityCollection.Entities.Count > 0)
+                {
+
+                    var optionalContactsCollection = (from entity in entityCollection.Entities
+                                                      where !requiredAttendees.Contacts.Any(x => x.Id == entity.Id)
+                                                      select entity).ToList();
+
+                    var requiredContactsCollection = (from entity in entityCollection.Entities
+                                                      where requiredAttendees.Contacts.Any(x => x.Id == entity.Id)
+                                                      select entity).ToList();
+                    
+                    
+                    foreach (var entity in requiredContactsCollection)
+                    {
+                        if (entity.Attributes.Contains("emailaddress1"))
+                        {
+                            string emailAddress = (string)entity.Attributes["emailaddress1"];
+                            requiredAttendeesStr.AppendLine(string.Format("ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;CN=\"{0}\";RSVP=TRUE:mailto:{1}", (string)entity.Attributes["fullname"], emailAddress));
+                        }
+                    }
+
+                    foreach (var entity in optionalContactsCollection)
+                    {
+                        if (entity.Attributes.Contains("emailaddress1"))
+                        {
+                            string emailAddress = (string)entity.Attributes["emailaddress1"];
+                            optionalAttendeesStr.AppendLine(string.Format("ATTENDEE;ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;CN=\"{0}\";RSVP=TRUE:mailto:{1}", (string)entity.Attributes["fullname"], emailAddress));
+                        }
+                    }
+
+                }
+            }
+
             var ical = new Entity("activitymimeattachment");
             ical["mimetype"] = "text/calendar; charset=UTF-8; method=REQUEST";//;method=REQUEST
-            ical["body"] = GetICS(appointment);//Base64 encoded version of vCalendar above
+            ical["body"] = GetICS(appointment, requiredAttendeesStr, optionalAttendeesStr);//Base64 encoded version of vCalendar above
             ical["subject"] = "Appointment";
             ical["filename"] = "Meeting";
             ical["objectid"] = new EntityReference("email", emailId);
@@ -287,9 +378,8 @@ namespace AppD365Connection
             organizationService.Create(ical);
         }
 
-        public string GetICS(AppointmentEntity appointment)
+        public string GetICS(AppointmentEntity appointment,StringBuilder requiredAttendees, StringBuilder optionalAttendees)
         {
-
             StringBuilder str = new StringBuilder();
             str.AppendLine("BEGIN:VCALENDAR");
             str.AppendLine("PRODID:-//Schedule a Meeting");
@@ -304,6 +394,8 @@ namespace AppD365Connection
             // str.AppendLine(string.Format("DESCRIPTION:{0}", "Test meeting"));
             str.AppendLine(string.Format("X-ALT-DESC;FMTTYPE=text/html:{0}", appointment.Description));//msg.Body
             str.AppendLine(string.Format("SUMMARY:{0}", appointment.Subject));//msg.Subject
+            str.AppendLine(requiredAttendees.ToString());
+            str.AppendLine(optionalAttendees.ToString());
             //str.AppendLine(string.Format("ORGANIZER:MAILTO:{0}", appointment.RequiredAttendees));//msg.From.Address"ashish22101989@gmail.com"
             //str.AppendLine(string.Format("ATTENDEE;CN=\"{0}\";RSVP=TRUE:mailto:{1}", "Rohit", "rohit@gmail.com"));
             str.AppendLine("BEGIN:VALARM");
@@ -316,7 +408,6 @@ namespace AppD365Connection
             var plainTextBytes = System.Text.Encoding.UTF8.GetBytes(str.ToString());
             return System.Convert.ToBase64String(plainTextBytes);
         }
-
 
         public string GetEmailBody(IOrganizationService organizationService)
         {

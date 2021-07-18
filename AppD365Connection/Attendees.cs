@@ -12,6 +12,7 @@ using Microsoft.Xrm.Tooling.Connector;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Crm.Sdk.Messages;
 
+
 namespace AppD365Connection
 {
     public class RequiredAttendees
@@ -41,11 +42,116 @@ namespace AppD365Connection
             this.Accounts.Add(account);
         }
 
+        public List<Contact> GetDistinctContactAttendees()
+        {
+            return Contacts.GroupBy(item => item.EmailAddress).Select(item => item.First()).ToList();
+        }
+
+        public List<Account> GetDistinctAccountAttendees()
+        {
+            return Accounts.GroupBy(item => item.EmailAddress).Select(item => item.First()).ToList();
+        }
+
+        public List<User> GetDistinctUserAttendees()
+        {
+            return Users.GroupBy(item => item.EmailAddress).Select(item => item.First()).ToList();
+        }
+
+        public List<Contact> GetDistinctOptionalContacts(List<Contact> optionalContacts, List<Contact> requiredContacts)
+        {
+            if (optionalContacts.Count==0 || requiredContacts.Count == 0)
+            {
+                return null;
+            }
+
+            var optionalContactsList = (from optContact in optionalContacts
+                       where !requiredContacts.Any(
+                                         x => x.Id == optContact.Id)
+                       select optContact).ToList();
+
+            return optionalContactsList.ToList();
+
+        }
+
+        public List<User> GetDistinctOptionalUsers(List<User> optionalUsers, List<User> requiredUsers)
+        {
+            if (optionalUsers.Count == 0 || requiredUsers.Count == 0)
+            {
+                return null;
+            }
+
+            var optionalUsersList = (from optUser in optionalUsers
+                                        where !requiredUsers.Any(
+                                                          x => x.Id == optUser.Id)
+                                        select optUser).ToList();
+
+            return optionalUsersList.ToList();
+
+        }
+
+        public List<Account> GetDistinctOptionalAccounts(List<Account> optionalAccounts, List<Account> requiredAccounts)
+        {
+            if (optionalAccounts.Count == 0 || requiredAccounts.Count == 0)
+            {
+                return null;
+            }
+
+            var optionalAccountsList = (from optAccount in optionalAccounts
+                                        where !requiredAccounts.Any(
+                                                          x => x.Id == optAccount.Id)
+                                        select optAccount).ToList();
+
+            return optionalAccountsList.ToList();
+
+        }
+
+        public void AddToList(EntityCollection attendeeCollection)
+        {
+            foreach (var attendee in attendeeCollection.Entities)
+            {
+
+                if (attendee != null && attendee.Contains("partyid") && attendee.Attributes["partyid"] != null)
+                {
+                    var entityReference = (EntityReference)attendee.Attributes["partyid"];
+                    //ent.Id = entRef.Id
+                    if (entityReference.LogicalName == "contact")
+                    {
+                        int contactCount = this.Contacts.Where(item => item.Id == entityReference.Id).Count();
+
+                        if (contactCount == 0)
+                        {
+                            this.AddToList(new Contact { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+
+                       
+                        
+                    }
+                    else if (entityReference.LogicalName == "account")
+                    {
+
+                        int usersCount = this.Users.Where(item => item.Id == entityReference.Id).Count();
+                        if (usersCount == 0)
+                        {
+                            this.AddToList(new User { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+                    }
+                    else if (entityReference.LogicalName == "systemuser")
+                    {
+                        int accountCount = this.Accounts.Where(item => item.Id == entityReference.Id).Count();
+                        if (accountCount == 0)
+                        {
+                            this.AddToList(new Account { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+                    }
+                }
+            }
+        }
+
         public void AddToList(EntityCollection relationshipAttendeeEntityCollection, RequiredAttendees requiredAttendeesCopy)
         {
             foreach (var attendee in relationshipAttendeeEntityCollection.Entities)
             {
-                if (attendee != null && attendee.Attributes.Contains("new_contact") && attendee.Attributes["new_contact"] != null)
+                if (attendee != null && attendee.Attributes.Contains("partyid") && attendee.Attributes["partyid"] != null)
                 {
                     EntityReference entityReference = (EntityReference)attendee.Attributes["new_contact"];
                     this.AddToList(new Contact { Id = entityReference.Id, Name = entityReference.Name });
@@ -68,11 +174,158 @@ namespace AppD365Connection
         }
     }
 
+    public class FetchXmlParameters
+    {
+
+        public FetchXmlParameters()
+        {
+            this.Conditions = new Dictionary<string, string>();
+        }
+        public string EntityName { get; set; }
+
+        public string[] Attributes { get; set; }
+
+        public string OrderByAttribute { get; set; }
+
+        public bool DescendingSortingOrder { get; set; }
+
+        public string FilterType { get; set; }
+
+        public string ConditionAttribute { get; set; }
+
+        public string ConditionOperator { get; set; }
+
+        public Dictionary<string, string> Conditions { get; set; }
+
+    }
+
+    public class FetchXml
+    {
+        public FetchXml(FetchXmlParameters fetchXmlParameters)
+        {
+            this.Parameter = fetchXmlParameters;
+        }
+
+        private FetchXmlParameters Parameter { get; set; }
+
+        public string GetFetchXml()
+        {
+            StringBuilder fetchXml = new StringBuilder();
+            fetchXml.AppendLine("<fetch version=\"1.0\" output-format=\"xml-platform\" mapping=\"logical\" distinct=\"false\">");
+            fetchXml.AppendLine("  <entity name=\""+ this.Parameter.EntityName+"\">");
+
+            foreach (var attribute in this.Parameter.Attributes)
+            {
+                fetchXml.AppendLine("    <attribute name=\"" + attribute + "\" />");
+            }
+
+            fetchXml.AppendLine("    <order attribute=\"" + this.Parameter.OrderByAttribute + "\" descending=\""+ this.Parameter.DescendingSortingOrder.ToString().ToLower()+"\" />");
+
+
+            fetchXml.AppendLine("    <filter type=\""+ this.Parameter.FilterType + "\">");
+
+            fetchXml.AppendLine("      <condition attribute=\""+ this.Parameter.ConditionAttribute+"\" operator=\""+ this.Parameter.ConditionOperator+"\">");
+
+            foreach (var condition in this.Parameter.Conditions)
+            {
+                //{25A17064-1AE7-E611-80F4-E0071B661F01}
+                fetchXml.AppendLine("        <value uitype=\""+ this.Parameter.EntityName + "\">{"+ condition.Key + "}</value>");
+            }
+
+            fetchXml.AppendLine("      </condition>");
+            fetchXml.AppendLine("    </filter>");
+            fetchXml.AppendLine("  </entity>");
+            fetchXml.AppendLine("</fetch>");
+            return fetchXml.ToString();
+        }
+
+    }
+
+    public  static class CommonUtility
+    {
+        public static Entity Retrieve(Guid guid, string entityName, string[] columns, IOrganizationService service)
+        {
+            return service.Retrieve(entityName, guid, new ColumnSet(columns));
+        }
+
+        public static EntityCollection RetrieveMultiple(string fetchXml,IOrganizationService service)
+        {
+            return service.RetrieveMultiple(new FetchExpression(fetchXml));
+        }
+
+        public static string GetFetchXml(FetchXmlParameters fetchXmlParameters)
+        {
+            FetchXml fetchXml = new FetchXml(fetchXmlParameters);
+            return fetchXml.GetFetchXml();
+        }
+
+    }
+
     public class OptionalAttendees
     {
+        public OptionalAttendees()
+        {
+            this.Contacts = new List<Contact>();
+            this.Accounts = new List<Account>();
+            this.Users = new List<User>();
+        }
         public List<Contact> Contacts { get; set; }
         public List<User> Users { get; set; }
         public List<Account> Accounts { get; set; }
+
+        public void AddToList(EntityCollection attendeeCollection)
+        {
+            foreach (var attendee in attendeeCollection.Entities)
+            {
+
+                if (attendee != null && attendee.Contains("partyid") && attendee.Attributes["partyid"] != null)
+                {
+                    var entityReference = (EntityReference)attendee.Attributes["partyid"];
+                    //ent.Id = entRef.Id
+                    if (entityReference.LogicalName == "contact")
+                    {
+                        int contactCount = this.Contacts.Where(item => item.Id == entityReference.Id).Count();
+                        if (contactCount == 0)
+                        {
+                            this.AddToList(new Contact { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+                    }
+                    else if (entityReference.LogicalName == "account")
+                    {
+
+                        int usersCount = this.Users.Where(item => item.Id == entityReference.Id).Count();
+                        if (usersCount == 0)
+                        {
+                            this.AddToList(new User { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+                    }
+                    else if (entityReference.LogicalName == "systemuser")
+                    {
+                        int accountCount = this.Accounts.Where(item => item.Id == entityReference.Id).Count();
+                        if (accountCount == 0)
+                        {
+                            this.AddToList(new Account { Id = entityReference.Id, Name = entityReference.Name });
+                        }
+                    }
+                }
+            }
+        }
+
+        private void AddToList(Contact contact)
+        {
+            this.Contacts.Add(contact);
+        }
+
+        private void AddToList(User user)
+        {
+            this.Users.Add(user);
+        }
+
+        private void AddToList(Account account)
+        {
+            this.Accounts.Add(account);
+        }
+
 
     }
 
@@ -81,24 +334,28 @@ namespace AppD365Connection
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string EntityName { get { return "contact"; } }
-    }
+        public string EmailAddress { get; set; }
 
+    }
 
     public class Account
     {
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string EntityName { get { return "account"; } }
-    }
 
+        public string EmailAddress { get; set; }
+
+        public Contact PrimaryContact { get; set; }
+    }
 
     public class User
     {
         public Guid Id { get; set; }
         public string Name { get; set; }
         public string EntityName { get { return "systemuser"; } }
+        public string EmailAddress { get; set; }
     }
-
 
     public class Appointment
     {

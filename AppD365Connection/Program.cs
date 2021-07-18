@@ -23,11 +23,11 @@ namespace AppD365Connection
             CrmServiceClient svc = new CrmServiceClient(connectionStr);
             if (svc.IsReady)
             {
-
                 AppointmentInvite appointmentInvite = new AppointmentInvite();
                 AppointmentEntity appointment = new AppointmentEntity();
                 //4a620836-26e3-eb11-bacb-0022486e5b09
-                var appointmentEnt = svc.Retrieve("appointment", new Guid("4a620836-26e3-eb11-bacb-0022486e5b09"), new ColumnSet(true));
+                var appointmentEnt = svc.Retrieve("appointment", new Guid("cf1cca81-e8e3-eb11-bacb-0022486e5b09" +
+                    ""), new ColumnSet(true));
                 Guid emailId = appointmentInvite.CreateEmail(appointmentEnt, appointment, svc);
                 appointmentInvite.CreateICSAttachment(emailId, appointment, svc);
                 appointmentInvite.SendEmail(emailId, svc);
@@ -95,7 +95,7 @@ namespace AppD365Connection
 
         public static string GetICS()
         {
-
+            
             StringBuilder str = new StringBuilder();
             str.AppendLine("BEGIN:VCALENDAR");
             str.AppendLine("PRODID:-//Schedule a Meeting");
